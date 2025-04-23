@@ -1,15 +1,19 @@
 # Meeting-Summarizer
-This is a Streamlit application that uses the Gemini Pro API to summarize meeting transcripts uploaded in PDF, TXT, or VTT format. The summary is provided in a structured format, and there is also a custom prompt option that allows you to get the desired format result.
 
+This is a Streamlit application that summarizes meeting transcripts uploaded in PDF, TXT, or VTT format. It uses either the Ollama or OpenRouter language models to generate summaries in a structured format. A custom prompt option is also available for tailoring the output.
 
 **Features**
-Upload meeting transcripts in PDF, TXT, or VTT format
-Get a summary of the transcript in a structured format
-Customize the summary format using a custom prompt option
-Easy-to-use Streamlit interface
+
+*   Upload meeting transcripts in PDF, TXT, or VTT format.
+*   Summarize transcripts using Ollama or OpenRouter language models.
+*   Customize the summary format using a custom prompt.
+*   Easy-to-use Streamlit interface.
 
 **Installation**
-Clone this repository
-Create a virtual environment using python version > 3.9.
-Replace YOUR_GEMINI_PRO_API_KEY in app.py with your Gemini Pro API key.
-Run the application: streamlit run app.py****
+
+1.  Clone this repository.
+2.  Create a virtual environment using Python version > 3.9.
+3.  Configure the `.env` file:
+    *   For Ollama, ensure the `OLLAMA_MODEL` environment variable is set (e.g., `qwq:32b-preview-q4_K_M`).
+    *   For OpenRouter, set the `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` environment variables.
+4.  Run the application: `streamlit run app.py`

@@ -14,8 +14,9 @@ from langchain.chains import RetrievalQA
 load_dotenv()
 
 # Configuration
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:27b")
 FAISS_INDEX_PATH = "faiss_index"
+
 
 # Function to load the vector store
 def load_vector_store():
@@ -26,6 +27,7 @@ def load_vector_store():
     except Exception as e:
         st.error(f"Error loading vector store: {e}")
         return None
+
 
 # Function to create the vector store
 def create_vector_store(text_chunks):
@@ -38,6 +40,7 @@ def create_vector_store(text_chunks):
         st.error(f"Error creating vector store: {e}")
         return None
 
+
 def get_pdf_text(pdf_docs):
     text = ""
     for pdf in pdf_docs:
@@ -46,9 +49,12 @@ def get_pdf_text(pdf_docs):
             for page in pdf_reader.pages:
                 text += page.extract_text()
         except PdfReadError as e:
-            st.error(f"Error reading PDF file: {e}. Please check if the file is properly formatted and try again.")
+            st.error(
+                f"Error reading PDF file: {e}. Please check if the file is properly formatted and try again."
+            )
             return None
     return text
+
 
 def get_txt_text(txt_docs):
     text = ""
@@ -60,6 +66,7 @@ def get_txt_text(txt_docs):
             return None
     return text
 
+
 def get_vtt_text(vtt_docs):
     text = ""
     for vtt in vtt_docs:
@@ -70,10 +77,12 @@ def get_vtt_text(vtt_docs):
             return None
     return text
 
+
 def get_text_chunks(text):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
     chunks = text_splitter.split_text(text)
     return chunks
+
 
 prompt_options = {
     "Sample Prompt": """
@@ -108,6 +117,7 @@ prompt_options = {
     The input text will be appended here: """
 }
 
+
 def get_ollama_response(vector_store, query, prompt):
     try:
         llm = Ollama(model=OLLAMA_MODEL)
@@ -115,7 +125,12 @@ def get_ollama_response(vector_store, query, prompt):
             llm=llm,
             chain_type="stuff",
             retriever=vector_store.as_retriever(),
-            chain_type_kwargs={"prompt": PromptTemplate(template=prompt + "{context}", input_variables=["context", "question"])}
+            chain_type_kwargs={
+                "prompt": PromptTemplate(
+                    template=prompt + "{context}",
+                    input_variables=["context", "question"],
+                )
+            },
         )
         response = qa_chain.run(query)
         return response
@@ -123,17 +138,24 @@ def get_ollama_response(vector_store, query, prompt):
         st.error(f"Error generating response: {e}")
         return None
 
+
 def main():
     st.set_page_config(layout="centered")
     st.title("Meeting Summarizer")
     st.header("Upload your meetings to get a summary")
 
-    file_uploader = st.file_uploader("Upload your files", accept_multiple_files=True, type=["txt", "vtt", "pdf"])
+    file_uploader = st.file_uploader(
+        "Upload your files", accept_multiple_files=True, type=["txt", "vtt", "pdf"]
+    )
 
-    prompt_selection = st.selectbox("Select a prompt", list(prompt_options.keys()) + ["Custom"])
+    prompt_selection = st.selectbox(
+        "Select a prompt", list(prompt_options.keys()) + ["Custom"]
+    )
 
     # Add a new input field for custom prompt
-    custom_prompt = st.text_input("Custom Prompt", "") if prompt_selection == "Custom" else None
+    custom_prompt = (
+        st.text_input("Custom Prompt", "") if prompt_selection == "Custom" else None
+    )
 
     if st.button("Submit & Process"):
         with st.spinner("Processing..."):
@@ -168,11 +190,16 @@ def main():
             st.success("Done")
 
             # Use the custom prompt when "Custom" is selected
-            selected_prompt = custom_prompt if prompt_selection == "Custom" else prompt_options[prompt_selection]
+            selected_prompt = (
+                custom_prompt
+                if prompt_selection == "Custom"
+                else prompt_options[prompt_selection]
+            )
 
             summary = get_ollama_response(vector_store, raw_text, selected_prompt)
             if summary:
                 st.write(summary)
+
 
 if __name__ == "__main__":
     main()

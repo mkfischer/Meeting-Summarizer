@@ -14,7 +14,7 @@ from langchain.chains import RetrievalQA
 load_dotenv()
 
 # Configuration
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:27b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:14b-instruct-q4_K_M")
 FAISS_INDEX_PATH = "faiss_index"
 
 
@@ -34,7 +34,7 @@ def load_vector_store():
 # Function to create the vector store
 def create_vector_store(text_chunks):
     try:
-        embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
+        embeddings = OllamaEmbeddings(model="jina/jina-embeddings-v2-base-en")
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
         vector_store.save_local(FAISS_INDEX_PATH)
         return vector_store
@@ -205,7 +205,10 @@ def main():
 
 if __name__ == "__main__":
     import sys
-    if not sys.argv[0].endswith("streamlit") and not any("streamlit" in arg for arg in sys.argv):
+
+    if not sys.argv[0].endswith("streamlit") and not any(
+        "streamlit" in arg for arg in sys.argv
+    ):
         print("\nError: This is a Streamlit app and should be run with:")
         print("\n    streamlit run summarizer-app/app.py\n")
         sys.exit(1)

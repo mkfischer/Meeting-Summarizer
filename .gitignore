@@ -1,3 +1,4 @@
 .aider*
 venv/**
 faiss_index/**
+summarizer-app/.env

@@ -6,3 +6,4 @@ langchain-ollama
 langchain-community
 faiss-cpu
 watchdog
+langchain_openai

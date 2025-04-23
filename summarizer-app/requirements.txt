@@ -3,3 +3,6 @@ python-dotenv
 langchain
 PyPDF2
 langchain-ollama
+langchain-community
+faiss-cpu
+watchdog

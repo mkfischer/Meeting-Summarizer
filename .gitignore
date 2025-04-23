@@ -1,2 +1,3 @@
 .aider*
 venv/**
+faiss_index/**

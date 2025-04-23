@@ -1,14 +1,14 @@
 import streamlit as st
 from dotenv import load_dotenv
 import os
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
-from langchain.llms import Ollama
+from langchain_community.llms import Ollama
 from langchain.chains import RetrievalQA
 
 load_dotenv()
@@ -22,7 +22,7 @@ FAISS_INDEX_PATH = "faiss_index"
 def load_vector_store():
     try:
         embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
-        vector_store = FAISS.load_local(FAISS_INDEX_PATH, embeddings)
+        vector_store = FAISS.load_local(FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True) # Added allow_dangerous_deserialization
         return vector_store
     except Exception as e:
         st.error(f"Error loading vector store: {e}")

@@ -204,4 +204,9 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    if not sys.argv[0].endswith("streamlit") and not any("streamlit" in arg for arg in sys.argv):
+        print("\nError: This is a Streamlit app and should be run with:")
+        print("\n    streamlit run summarizer-app/app.py\n")
+        sys.exit(1)
     main()

@@ -1,0 +1,15 @@
+[project]
+name = "meeting-summarizer"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "faiss-cpu>=1.10.0",
+    "langchain>=0.3.24",
+    "langchain-community>=0.3.22",
+    "langchain-ollama>=0.3.2",
+    "langchain-openai>=0.3.14",
+    "pypdf2>=3.0.1",
+    "python-dotenv>=1.1.0",
+    "streamlit>=1.44.1",
+    "watchdog>=6.0.0",
+]

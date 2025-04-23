@@ -1,17 +1,15 @@
 import streamlit as st
 from dotenv import load_dotenv
 import os
-import openai
 from langchain.vectorstores import FAISS
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_ollama import OllamaEmbeddings
 
 load_dotenv()
-openai.api_key = os.getenv("API_KEY")
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -42,7 +40,7 @@ def get_text_chunks(text):
     return chunks
 
 def get_vector_store(text_chunks):
-    embeddings = OpenAIEmbeddings()
+    embeddings = OllamaEmbeddings(model="llama3")
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
     vector_store.save_local("faiss_index")
 
@@ -80,14 +78,11 @@ prompt_options = {
 }
 
 def get_gemini_response(input, prompt):
-    model = "openai/gpt-3.5-turbo"  # Or any other OpenRouter model
-    messages = [{"role": "user", "content": prompt + input}]
-    response = openai.ChatCompletion.create(
-        model=model,
-        messages=messages,
-        max_tokens=2048,
-    )
-    return response.choices[0].message["content"]
+    # This function is a placeholder, as the original code used the Gemini API here.
+    # You'll need to replace this with a call to your preferred language model,
+    # potentially using Langchain or another library to interface with Ollama or
+    # another model provider.
+    return "This function needs to be implemented to use a language model."
 
 def main():
     st.set_page_config(layout="centered")

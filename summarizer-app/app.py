@@ -157,7 +157,7 @@ def get_text_chunks(text):
 
 
 prompt_options = {
-    "Defined Prompt": """
+    "Defined Prompt": """You must only respond in English.
     Generate detailed and verbose discussion items of the following meeting transcript do not include minutes of meeting and next steps.
     Do not use any previous information, Use the following format:
 

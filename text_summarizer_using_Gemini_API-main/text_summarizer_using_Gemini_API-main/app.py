@@ -1,19 +1,16 @@
-
-
 import streamlit as st
 from dotenv import load_dotenv
 import os
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-import google.generativeai as genai
+import openai
 from langchain.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 from PyPDF2 import PdfReader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.embeddings import OpenAIEmbeddings
 
 load_dotenv()
-genai.configure(api_key=os.getenv("API_KEY"))
+openai.api_key = os.getenv("API_KEY")
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -44,7 +41,7 @@ def get_text_chunks(text):
     return chunks
 
 def get_vector_store(text_chunks):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = OpenAIEmbeddings()
     vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
     vector_store.save_local("faiss_index")
 
@@ -82,12 +79,14 @@ prompt_options = {
 }
 
 def get_gemini_response(input, prompt):
-    model = genai.GenerativeModel("gemini-pro")
-    if prompt == "Sample Prompt":
-        response = model.generate_content(prompt + input)
-    else:
-        response = model.generate_content(prompt + "\n" + input)
-    return response.text
+    model = "openai/gpt-3.5-turbo"  # Or any other OpenRouter model
+    messages = [{"role": "user", "content": prompt + input}]
+    response = openai.ChatCompletion.create(
+        model=model,
+        messages=messages,
+        max_tokens=2048,
+    )
+    return response.choices[0].message["content"]
 
 def main():
     st.set_page_config(layout="centered")
@@ -120,4 +119,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

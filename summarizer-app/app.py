@@ -12,7 +12,7 @@ from langchain_ollama import OllamaEmbeddings
 
 # LLM Imports
 from langchain_ollama import OllamaLLM
-from langchain_openai import ChatOpenAI # Added for OpenRouter
+from langchain_openai import ChatOpenAI  # Added for OpenRouter
 
 from langchain.chains import RetrievalQA
 import sys
@@ -23,8 +23,10 @@ load_dotenv()
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwq:32b-preview-q4_K_M")
 FAISS_INDEX_PATH = "faiss_index"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1" # Standard OpenRouter base URL
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-flash-1.5") # Example model
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"  # Standard OpenRouter base URL
+OPENROUTER_MODEL = os.getenv(
+    "OPENROUTER_MODEL", "google/gemini-2.0-flash-001"
+)  # Example model
 
 
 # Function to load the vector store
@@ -195,9 +197,7 @@ prompt_options = {
 
 
 # Renamed function and added llm_provider parameter
-def get_llm_response(
-    vector_store, query_text, prompt, llm_provider="Ollama"
-):
+def get_llm_response(vector_store, query_text, prompt, llm_provider="Ollama"):
     if not query_text:
         st.warning("Cannot generate response from empty input text.")
         return None
@@ -207,7 +207,10 @@ def get_llm_response(
             llm = OllamaLLM(model=OLLAMA_MODEL)
             st.info(f"Using Ollama model: {OLLAMA_MODEL}")
         elif llm_provider == "OpenRouter":
-            if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "YOUR_OPENROUTER_API_KEY_HERE":
+            if (
+                not OPENROUTER_API_KEY
+                or OPENROUTER_API_KEY == "YOUR_OPENROUTER_API_KEY_HERE"
+            ):
                 st.error("OpenRouter API key not found or not configured in .env file.")
                 return None
             llm = ChatOpenAI(
@@ -390,9 +393,14 @@ def main():
 
     if st.button("Generate Summary", disabled=not generate_enabled):
         # Check for OpenRouter key specifically if selected
-        if llm_provider_selection == "OpenRouter" and (not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "YOUR_OPENROUTER_API_KEY_HERE"):
-             st.error("OpenRouter is selected, but the API key is missing or not set in the .env file. Please configure OPENROUTER_API_KEY.")
-             st.stop()
+        if llm_provider_selection == "OpenRouter" and (
+            not OPENROUTER_API_KEY
+            or OPENROUTER_API_KEY == "YOUR_OPENROUTER_API_KEY_HERE"
+        ):
+            st.error(
+                "OpenRouter is selected, but the API key is missing or not set in the .env file. Please configure OPENROUTER_API_KEY."
+            )
+            st.stop()
 
         with st.spinner(f"Generating summary using {llm_provider_selection}..."):
             # Determine the prompt to use
@@ -409,7 +417,7 @@ def main():
                 st.session_state.vector_store,
                 st.session_state.raw_text,  # Pass the full text
                 selected_prompt,
-                llm_provider_selection, # Pass the selected provider
+                llm_provider_selection,  # Pass the selected provider
             )
             if summary:
                 st.subheader(f"Generated Summary (using {llm_provider_selection})")

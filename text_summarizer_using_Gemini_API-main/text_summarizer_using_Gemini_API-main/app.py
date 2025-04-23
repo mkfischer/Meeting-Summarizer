@@ -8,8 +8,35 @@ from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
+from langchain.llms import Ollama
+from langchain.chains import RetrievalQA
 
 load_dotenv()
+
+# Configuration
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
+FAISS_INDEX_PATH = "faiss_index"
+
+# Function to load the vector store
+def load_vector_store():
+    try:
+        embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
+        vector_store = FAISS.load_local(FAISS_INDEX_PATH, embeddings)
+        return vector_store
+    except Exception as e:
+        st.error(f"Error loading vector store: {e}")
+        return None
+
+# Function to create the vector store
+def create_vector_store(text_chunks):
+    try:
+        embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
+        vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
+        vector_store.save_local(FAISS_INDEX_PATH)
+        return vector_store
+    except Exception as e:
+        st.error(f"Error creating vector store: {e}")
+        return None
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -18,31 +45,35 @@ def get_pdf_text(pdf_docs):
             pdf_reader = PdfReader(pdf)
             for page in pdf_reader.pages:
                 text += page.extract_text()
-        except PdfReadError:
-            st.error("Error reading PDF file. Please check if the file is properly formatted and try again.")
+        except PdfReadError as e:
+            st.error(f"Error reading PDF file: {e}. Please check if the file is properly formatted and try again.")
+            return None
     return text
 
 def get_txt_text(txt_docs):
     text = ""
     for txt in txt_docs:
-        text += txt.read().decode("utf-8")
+        try:
+            text += txt.read().decode("utf-8")
+        except Exception as e:
+            st.error(f"Error reading TXT file: {e}")
+            return None
     return text
 
 def get_vtt_text(vtt_docs):
     text = ""
     for vtt in vtt_docs:
-        text += vtt.read().decode("utf-8")
+        try:
+            text += vtt.read().decode("utf-8")
+        except Exception as e:
+            st.error(f"Error reading VTT file: {e}")
+            return None
     return text
 
 def get_text_chunks(text):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=10000, chunk_overlap=1000)
     chunks = text_splitter.split_text(text)
     return chunks
-
-def get_vector_store(text_chunks):
-    embeddings = OllamaEmbeddings(model="llama3")
-    vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
-    vector_store.save_local("faiss_index")
 
 prompt_options = {
     "Sample Prompt": """
@@ -77,12 +108,20 @@ prompt_options = {
     The input text will be appended here: """
 }
 
-def get_gemini_response(input, prompt):
-    # This function is a placeholder, as the original code used the Gemini API here.
-    # You'll need to replace this with a call to your preferred language model,
-    # potentially using Langchain or another library to interface with Ollama or
-    # another model provider.
-    return "This function needs to be implemented to use a language model."
+def get_ollama_response(vector_store, query, prompt):
+    try:
+        llm = Ollama(model=OLLAMA_MODEL)
+        qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=vector_store.as_retriever(),
+            chain_type_kwargs={"prompt": PromptTemplate(template=prompt + "{context}", input_variables=["context", "question"])}
+        )
+        response = qa_chain.run(query)
+        return response
+    except Exception as e:
+        st.error(f"Error generating response: {e}")
+        return None
 
 def main():
     st.set_page_config(layout="centered")
@@ -102,16 +141,38 @@ def main():
             txt_docs = [file for file in file_uploader if file.name.endswith(".txt")]
             vtt_docs = [file for file in file_uploader if file.name.endswith(".vtt")]
 
-            raw_text = get_pdf_text(pdf_docs) + get_txt_text(txt_docs) + get_vtt_text(vtt_docs)
+            raw_text = ""
+            pdf_text = get_pdf_text(pdf_docs)
+            if pdf_text:
+                raw_text += pdf_text
+            txt_text = get_txt_text(txt_docs)
+            if txt_text:
+                raw_text += txt_text
+            vtt_text = get_vtt_text(vtt_docs)
+            if vtt_text:
+                raw_text += vtt_text
+
+            if not raw_text:
+                st.warning("No text extracted from the uploaded files.")
+                return
+
             text_chunks = get_text_chunks(raw_text)
-            get_vector_store(text_chunks)
+
+            # Load vector store if it exists, otherwise create it
+            vector_store = load_vector_store()
+            if vector_store is None:
+                vector_store = create_vector_store(text_chunks)
+                if vector_store is None:
+                    return
+
             st.success("Done")
 
             # Use the custom prompt when "Custom" is selected
             selected_prompt = custom_prompt if prompt_selection == "Custom" else prompt_options[prompt_selection]
 
-            summary = get_gemini_response(raw_text, selected_prompt)
-            st.write(summary)
+            summary = get_ollama_response(vector_store, raw_text, selected_prompt)
+            if summary:
+                st.write(summary)
 
 if __name__ == "__main__":
     main()

@@ -10,8 +10,10 @@ from PyPDF2.errors import PdfReadError
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
 
-# Removed: from langchain_community.llms import Ollama
-from langchain_ollama import OllamaLLM  # Added new import
+# LLM Imports
+from langchain_ollama import OllamaLLM
+from langchain_openai import ChatOpenAI # Added for OpenRouter
+
 from langchain.chains import RetrievalQA
 import sys
 
@@ -20,6 +22,9 @@ load_dotenv()
 # Configuration
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwq:32b-preview-q4_K_M")
 FAISS_INDEX_PATH = "faiss_index"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1" # Standard OpenRouter base URL
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-flash-1.5") # Example model
 
 
 # Function to load the vector store
@@ -40,6 +45,7 @@ def load_vector_store():
     try:
         # Use the same embeddings model used for creation if possible, or a default
         # Assuming jina was used for creation based on create_vector_store
+        # KEEP USING OLLAMA FOR EMBEDDINGS
         embeddings = OllamaEmbeddings(model="jina/jina-embeddings-v2-base-en")
         vector_store = FAISS.load_local(
             FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
@@ -56,7 +62,7 @@ def create_vector_store(text_chunks):
     try:
         # Ensure the index directory exists
         os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
-        # Specify the embeddings model explicitly
+        # Specify the embeddings model explicitly - KEEP USING OLLAMA FOR EMBEDDINGS
         embeddings = OllamaEmbeddings(model="jina/jina-embeddings-v2-base-en")
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
         vector_store.save_local(FAISS_INDEX_PATH)
@@ -188,15 +194,33 @@ prompt_options = {
 }
 
 
-def get_ollama_response(
-    vector_store, query_text, prompt
-):  # Renamed query -> query_text for clarity
+# Renamed function and added llm_provider parameter
+def get_llm_response(
+    vector_store, query_text, prompt, llm_provider="Ollama"
+):
     if not query_text:
         st.warning("Cannot generate response from empty input text.")
         return None
     try:
-        # Use the updated OllamaLLM class
-        llm = OllamaLLM(model=OLLAMA_MODEL)
+        # Select LLM based on provider
+        if llm_provider == "Ollama":
+            llm = OllamaLLM(model=OLLAMA_MODEL)
+            st.info(f"Using Ollama model: {OLLAMA_MODEL}")
+        elif llm_provider == "OpenRouter":
+            if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "YOUR_OPENROUTER_API_KEY_HERE":
+                st.error("OpenRouter API key not found or not configured in .env file.")
+                return None
+            llm = ChatOpenAI(
+                model=OPENROUTER_MODEL,
+                openai_api_key=OPENROUTER_API_KEY,
+                openai_api_base=OPENROUTER_BASE_URL,
+                # You might need to adjust temperature or other parameters
+                # temperature=0.7,
+            )
+            st.info(f"Using OpenRouter model: {OPENROUTER_MODEL}")
+        else:
+            st.error(f"Invalid LLM provider selected: {llm_provider}")
+            return None
 
         # The prompt template remains the same, expecting context and question
         template = prompt + "\n\nContext:\n{context}\n\nQuestion:\n{question}"
@@ -230,7 +254,7 @@ def get_ollama_response(
 
         return response
     except Exception as e:
-        st.error(f"Error generating response: {e}")
+        st.error(f"Error generating response using {llm_provider}: {e}")
         # Optionally log the full traceback here for debugging
         # import traceback
         # st.error(traceback.format_exc())
@@ -268,9 +292,21 @@ def main():
                     "No existing knowledge base found. Please upload files to create one."
                 )
 
-    file_uploader = st.file_uploader(
-        "Upload your files", accept_multiple_files=True, type=["txt", "vtt", "pdf"]
-    )
+    # --- UI Elements ---
+    col1, col2 = st.columns(2)
+
+    with col1:
+        file_uploader = st.file_uploader(
+            "Upload your files", accept_multiple_files=True, type=["txt", "vtt", "pdf"]
+        )
+
+    with col2:
+        # Add LLM Provider Selection
+        llm_provider_selection = st.radio(
+            "Select LLM Provider",
+            ("Ollama", "OpenRouter"),
+            help="Choose the language model to generate the summary.",
+        )
 
     prompt_selection = st.selectbox(
         "Select a prompt", list(prompt_options.keys()) + ["Custom"]
@@ -353,7 +389,12 @@ def main():
     )
 
     if st.button("Generate Summary", disabled=not generate_enabled):
-        with st.spinner("Generating summary..."):
+        # Check for OpenRouter key specifically if selected
+        if llm_provider_selection == "OpenRouter" and (not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "YOUR_OPENROUTER_API_KEY_HERE"):
+             st.error("OpenRouter is selected, but the API key is missing or not set in the .env file. Please configure OPENROUTER_API_KEY.")
+             st.stop()
+
+        with st.spinner(f"Generating summary using {llm_provider_selection}..."):
             # Determine the prompt to use
             if prompt_selection == "Custom":
                 if not custom_prompt_input or not custom_prompt_input.strip():
@@ -363,18 +404,19 @@ def main():
             else:
                 selected_prompt = prompt_options[prompt_selection]
 
-            # Use the stored raw_text for the query/context
-            summary = get_ollama_response(
+            # Use the stored raw_text for the query/context and pass the selected provider
+            summary = get_llm_response(
                 st.session_state.vector_store,
                 st.session_state.raw_text,  # Pass the full text
                 selected_prompt,
+                llm_provider_selection, # Pass the selected provider
             )
             if summary:
-                st.subheader("Generated Summary")
+                st.subheader(f"Generated Summary (using {llm_provider_selection})")
                 st.write(summary)
             else:
-                # Error is already shown in get_ollama_response
-                st.error("Failed to generate summary.")
+                # Error is already shown in get_llm_response
+                st.error(f"Failed to generate summary using {llm_provider_selection}.")
 
     # Display info messages based on state
     if st.session_state.vector_store is None:

@@ -2,15 +2,16 @@ import streamlit as st
 from dotenv import load_dotenv
 import os
 from langchain_community.vectorstores import FAISS
-from langchain.chains.question_answering import load_qa_chain
+# Removed: from langchain.chains.question_answering import load_qa_chain
 from langchain.prompts import PromptTemplate
 from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_ollama import OllamaEmbeddings
-from langchain_community.llms import Ollama
+# Removed: from langchain_community.llms import Ollama
+from langchain_ollama import OllamaLLM # Added new import
 from langchain.chains import RetrievalQA
-import sys  # Keep sys import if needed elsewhere, otherwise remove if only used in the check
+import sys
 
 load_dotenv()
 
@@ -31,7 +32,9 @@ def load_vector_store():
         return None
 
     try:
-        embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
+        # Use the same embeddings model used for creation if possible, or a default
+        # Assuming jina was used for creation based on create_vector_store
+        embeddings = OllamaEmbeddings(model="jina/jina-embeddings-v2-base-en")
         vector_store = FAISS.load_local(
             FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
         )
@@ -47,6 +50,7 @@ def create_vector_store(text_chunks):
     try:
         # Ensure the index directory exists
         os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
+        # Specify the embeddings model explicitly
         embeddings = OllamaEmbeddings(model="jina/jina-embeddings-v2-base-en")
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
         vector_store.save_local(FAISS_INDEX_PATH)
@@ -67,7 +71,7 @@ def get_pdf_text(pdf_docs):
                     text += page_text
         except PdfReadError as e:
             st.error(
-                f"Error reading PDF file: {e}. Please check if the file is properly formatted and try again."
+                f"Error reading PDF file: {pdf.name} - {e}. Please check if the file is properly formatted and try again."
             )
             return None
         except Exception as e: # Catch other potential errors during PDF processing
@@ -162,15 +166,15 @@ prompt_options = {
 }
 
 
-def get_ollama_response(vector_store, query, prompt):
-    if not query:
-        st.warning("Cannot generate response from empty input.")
+def get_ollama_response(vector_store, query_text, prompt): # Renamed query -> query_text for clarity
+    if not query_text:
+        st.warning("Cannot generate response from empty input text.")
         return None
     try:
-        llm = Ollama(model=OLLAMA_MODEL)
-        # Ensure the prompt template correctly includes the context and the query/question
-        # The 'query' variable here is actually the full text, let's pass it as context.
-        # We need a placeholder for a 'question' even if it's implicitly the summarization task.
+        # Use the updated OllamaLLM class
+        llm = OllamaLLM(model=OLLAMA_MODEL)
+
+        # The prompt template remains the same, expecting context and question
         template = prompt + "\n\nContext:\n{context}\n\nQuestion:\n{question}"
         prompt_template = PromptTemplate(
             template=template,
@@ -182,19 +186,30 @@ def get_ollama_response(vector_store, query, prompt):
             chain_type="stuff",
             retriever=vector_store.as_retriever(),
             chain_type_kwargs={"prompt": prompt_template},
-            # Pass the raw_text (query) as the 'query' to the chain,
-            # Langchain's RetrievalQA uses this to find relevant docs ('context')
-            # and also potentially as the 'question' if not explicitly separated.
-            # Let's provide a generic question for the summarization task.
+            return_source_documents=False, # Don't need source docs for summarization
         )
+
         # Provide a generic question suitable for the prompt's task
         generic_question = "Summarize the provided text according to the format."
-        response = qa_chain.run(query=generic_question) # Use generic question here
-        # The context will be automatically fetched and inserted by the retriever
+
+        # Use invoke instead of run, passing the query in a dictionary
+        # The 'query' key is standard for RetrievalQA chains
+        response_dict = qa_chain.invoke({"query": generic_question})
+
+        # Extract the actual result from the response dictionary
+        # The result is typically under the 'result' key for RetrievalQA
+        response = response_dict.get("result")
+
+        if not response:
+             st.error("Received an empty response from the language model.")
+             return None
 
         return response
     except Exception as e:
         st.error(f"Error generating response: {e}")
+        # Optionally log the full traceback here for debugging
+        # import traceback
+        # st.error(traceback.format_exc())
         return None
 
 
@@ -203,17 +218,25 @@ def main():
     st.title("Meeting Summarizer")
     st.header("Upload your meetings to get a summary")
 
-    # Initialize session state for vector store
+    # Initialize session state for vector store and raw text
     if "vector_store" not in st.session_state:
         st.session_state.vector_store = None
-        # Try loading existing vector store on first run
-        with st.spinner("Checking for existing knowledge base..."): # Updated spinner text
+    if "raw_text" not in st.session_state:
+        st.session_state.raw_text = None
+
+    # Load vector store only once at the start if not already loaded
+    if st.session_state.vector_store is None:
+        with st.spinner("Checking for existing knowledge base..."):
              st.session_state.vector_store = load_vector_store()
              if st.session_state.vector_store:
                  st.success("Existing knowledge base loaded.")
+                 # If we load an existing store, we don't have the raw text in session
+                 # We could potentially store/load raw text too, but for now,
+                 # require reprocessing if using an old index.
+                 st.info("Existing knowledge base loaded. Process files again to generate a new summary.")
+                 st.session_state.raw_text = None # Ensure raw_text is cleared if only loading index
              else:
-                 # This info message now correctly covers both "not found" and "error loading" cases
-                 st.info("No existing knowledge base found or error loading. Please upload files to create one.")
+                 st.info("No existing knowledge base found. Please upload files to create one.")
 
 
     file_uploader = st.file_uploader(
@@ -232,83 +255,103 @@ def main():
     if st.button("Process Uploaded Files"):
         if not file_uploader:
             st.warning("Please upload at least one file.")
-            return # Stop processing if no files are uploaded
+            st.stop() # Use st.stop() to halt execution cleanly
 
         with st.spinner("Processing uploaded files..."):
             pdf_docs = [file for file in file_uploader if file.name.endswith(".pdf")]
             txt_docs = [file for file in file_uploader if file.name.endswith(".txt")]
             vtt_docs = [file for file in file_uploader if file.name.endswith(".vtt")]
 
-            raw_text = ""
+            # Reset raw text before processing new files
+            st.session_state.raw_text = ""
+            processing_error = False # Flag to track errors
+
             pdf_text = get_pdf_text(pdf_docs)
-            if pdf_text is not None: # Check for None in case of error
-                raw_text += pdf_text
-            else:
-                 st.error("Failed to process PDF files.")
-                 return # Stop if PDF processing failed
+            if pdf_text is not None:
+                st.session_state.raw_text += pdf_text
+            elif pdf_docs: # Only set error flag if there were PDFs to process
+                 st.error("Failed to process one or more PDF files.")
+                 processing_error = True
 
             txt_text = get_txt_text(txt_docs)
-            if txt_text is not None: # Check for None in case of error
-                raw_text += txt_text
-            else:
-                st.error("Failed to process TXT files.")
-                return # Stop if TXT processing failed
+            if txt_text is not None:
+                st.session_state.raw_text += txt_text
+            elif txt_docs: # Only set error flag if there were TXTs to process
+                st.error("Failed to process one or more TXT files.")
+                processing_error = True
 
             vtt_text = get_vtt_text(vtt_docs)
-            if vtt_text is not None: # Check for None in case of error
-                raw_text += vtt_text
-            else:
-                st.error("Failed to process VTT files.")
-                return # Stop if VTT processing failed
+            if vtt_text is not None:
+                st.session_state.raw_text += vtt_text
+            elif vtt_docs: # Only set error flag if there were VTTs to process
+                st.error("Failed to process one or more VTT files.")
+                processing_error = True
 
+            # If any processing failed, stop
+            if processing_error:
+                st.session_state.raw_text = None # Clear partial text
+                st.stop()
 
-            if not raw_text.strip():
+            if not st.session_state.raw_text or not st.session_state.raw_text.strip():
                 st.warning("No text extracted from the uploaded files.")
-                return
+                st.session_state.raw_text = None # Clear empty text
+                st.stop()
 
-            text_chunks = get_text_chunks(raw_text)
+            text_chunks = get_text_chunks(st.session_state.raw_text)
             if not text_chunks:
                  st.warning("Could not split text into chunks.")
-                 return
+                 st.session_state.raw_text = None # Clear text if chunking failed
+                 st.stop()
 
             # Create and save the vector store from the new text
             # This overwrites the previous index.
-            st.session_state.vector_store = create_vector_store(text_chunks)
-            if st.session_state.vector_store is None:
+            new_vector_store = create_vector_store(text_chunks)
+            if new_vector_store is None:
                 st.error("Failed to create knowledge base from uploaded files.")
-                return
+                st.session_state.raw_text = None # Clear text if store creation failed
+                st.stop()
+            else:
+                st.session_state.vector_store = new_vector_store
+                st.success("Files processed and knowledge base updated.")
+                # Raw text is already in st.session_state.raw_text
 
-            st.success("Files processed and knowledge base updated.")
-            # Store the extracted raw text in session state to use for summarization
-            st.session_state.raw_text = raw_text
 
+    # Button to generate summary, enabled only if vector store and raw_text exist
+    generate_enabled = st.session_state.vector_store is not None and st.session_state.raw_text is not None
 
-    # Button to generate summary, only active if vector store exists and raw_text is available
-    if st.session_state.vector_store is not None and "raw_text" in st.session_state and st.session_state.raw_text:
-        if st.button("Generate Summary"):
-             with st.spinner("Generating summary..."):
-                # Determine the prompt to use
-                if prompt_selection == "Custom":
-                    if not custom_prompt_input:
-                        st.warning("Please enter a custom prompt.")
-                        return
-                    selected_prompt = custom_prompt_input
-                else:
-                    selected_prompt = prompt_options[prompt_selection]
+    if st.button("Generate Summary", disabled=not generate_enabled):
+         with st.spinner("Generating summary..."):
+            # Determine the prompt to use
+            if prompt_selection == "Custom":
+                if not custom_prompt_input or not custom_prompt_input.strip():
+                    st.warning("Please enter a custom prompt.")
+                    st.stop()
+                selected_prompt = custom_prompt_input
+            else:
+                selected_prompt = prompt_options[prompt_selection]
 
-                # Use the stored raw_text for the query/context
-                summary = get_ollama_response(st.session_state.vector_store, st.session_state.raw_text, selected_prompt)
-                if summary:
-                    st.subheader("Generated Summary")
-                    st.write(summary)
-                else:
-                    st.error("Failed to generate summary.")
-    elif st.session_state.vector_store is None:
+            # Use the stored raw_text for the query/context
+            summary = get_ollama_response(
+                st.session_state.vector_store,
+                st.session_state.raw_text, # Pass the full text
+                selected_prompt
+            )
+            if summary:
+                st.subheader("Generated Summary")
+                st.write(summary)
+            else:
+                # Error is already shown in get_ollama_response
+                st.error("Failed to generate summary.")
+
+    # Display info messages based on state
+    if st.session_state.vector_store is None:
          st.info("Upload and process files to enable summary generation.")
-    # Add a condition to handle the case where vector store exists but no text has been processed yet
-    elif "raw_text" not in st.session_state or not st.session_state.raw_text:
+    elif st.session_state.raw_text is None:
+        # This covers cases where index loaded but text not processed,
+        # or processing failed.
         st.info("Process uploaded files to enable summary generation.")
 
 
 # Call main function directly
-main()
+if __name__ == "__main__":
+    main()

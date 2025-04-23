@@ -21,20 +21,32 @@ FAISS_INDEX_PATH = "faiss_index"
 
 # Function to load the vector store
 def load_vector_store():
+    index_file = os.path.join(FAISS_INDEX_PATH, "index.faiss")
+    pkl_file = os.path.join(FAISS_INDEX_PATH, "index.pkl")
+
+    # Check if the index files exist before attempting to load
+    if not os.path.exists(FAISS_INDEX_PATH) or not os.path.exists(index_file) or not os.path.exists(pkl_file):
+        # Index doesn't exist, return None without error.
+        # The info message will be handled in the main function.
+        return None
+
     try:
         embeddings = OllamaEmbeddings(model=OLLAMA_MODEL)
         vector_store = FAISS.load_local(
             FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True
-        )  # Added allow_dangerous_deserialization
+        )
         return vector_store
     except Exception as e:
-        st.error(f"Error loading vector store: {e}")
+        # Only show error if loading fails when files *do* exist
+        st.error(f"Error loading existing vector store: {e}")
         return None
 
 
 # Function to create the vector store
 def create_vector_store(text_chunks):
     try:
+        # Ensure the index directory exists
+        os.makedirs(FAISS_INDEX_PATH, exist_ok=True)
         embeddings = OllamaEmbeddings(model="jina/jina-embeddings-v2-base-en")
         vector_store = FAISS.from_texts(text_chunks, embedding=embeddings)
         vector_store.save_local(FAISS_INDEX_PATH)
@@ -195,11 +207,12 @@ def main():
     if "vector_store" not in st.session_state:
         st.session_state.vector_store = None
         # Try loading existing vector store on first run
-        with st.spinner("Loading existing knowledge base..."):
+        with st.spinner("Checking for existing knowledge base..."): # Updated spinner text
              st.session_state.vector_store = load_vector_store()
              if st.session_state.vector_store:
                  st.success("Existing knowledge base loaded.")
              else:
+                 # This info message now correctly covers both "not found" and "error loading" cases
                  st.info("No existing knowledge base found or error loading. Please upload files to create one.")
 
 
@@ -270,8 +283,8 @@ def main():
             st.session_state.raw_text = raw_text
 
 
-    # Button to generate summary, only active if vector store exists
-    if st.session_state.vector_store is not None and "raw_text" in st.session_state:
+    # Button to generate summary, only active if vector store exists and raw_text is available
+    if st.session_state.vector_store is not None and "raw_text" in st.session_state and st.session_state.raw_text:
         if st.button("Generate Summary"):
              with st.spinner("Generating summary..."):
                 # Determine the prompt to use
@@ -292,6 +305,9 @@ def main():
                     st.error("Failed to generate summary.")
     elif st.session_state.vector_store is None:
          st.info("Upload and process files to enable summary generation.")
+    # Add a condition to handle the case where vector store exists but no text has been processed yet
+    elif "raw_text" not in st.session_state or not st.session_state.raw_text:
+        st.info("Process uploaded files to enable summary generation.")
 
 
 # Call main function directly
